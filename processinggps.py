@@ -130,55 +130,6 @@ def detect_start(r, T,  a):
 
 
 
-
-fd = np.linspace(-1,1,Nfd)* (fdmax/fs)
-
-
-for isat in range( 1 ,  32 ):
-    sat = np.array(   PRN(isat) )
-    repeatno= 20
-    # satr = signal.resample(sat , int((fs/fsca)* len(sat)) )
-    # csat = np.tile(satr,repeatno)
-
-    # satt = np.tile(sat,repeatno)
-    # csat = signal.resample(satt, int((fs/fsca)* len(satt)) )
-    # csat[csat>0]=1
-    # csat[csat<0]=-1
-
-    # satind  =  np.floor(np.arange(0,len(sat) , fsca/fs)).astype(int)
-
-    satind  =  np.floor( np.linspace(0, len(sat)-1, num=int((fs/fsca)* len(sat)) )     ).astype(int)
-    satrep  = sat[satind]
-    csat = np.tile(satrep,repeatno)
-
-    if  len(csat)  >  len(r) :
-        csat = csat[0:len(r)]
-
-    rc = r[0:len(csat)]
-    t = np.arange(0,len(rc) )
-
-    rr = rc[None,:]*np.exp(-1j*2*np.pi*t[None,:]*fd[:,None])
-    YE = np.fft.fft(rr,axis= 1)
-
-    CSAT = np.fft.fft(csat)
-
-    U = np.fft.ifft(YE* np.conj(CSAT[None,:]),axis= 1)
-
-    plt.figure('GPS number = ' + str(isat),figsize=(20,20))
-    plt.subplot(211)
-    plt.title('GPS number = ' + str(isat))
-    plt.imshow(np.abs(U)     ,cmap='jet') #  , vmin =  0 ,  vmax= 30
-    plt.axis('auto')
-    plt.colorbar()
-    plt.show()
-
-
-    plt.subplot(212)
-    plt.title('GPS number = ' + str(isat)  )
-    plt.plot(      abs(U)[np.where(np.abs(U)== np.max(np.abs(U)))[0][0]    ]    )
-    plt.show()
-    ind,  peaks = sig.find_peaks(  abs(U)[np.where(np.abs(U)== np.max(np.abs(U)))[0][0]    ]   , distance=  0.9*  len(satrep) ,  height= 0.1*np.max(np.abs(U)) )
-
 def correlate(rc,csat,fd):
     """
     rc : complex signal IQ samples
