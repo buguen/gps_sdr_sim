@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+# Lien github 
+# 
 # -*- coding: utf-8 -*-
+#
+#   shift(register, feedback, output)
+#
+#
+
 """
 Created on Tue Sep 29 19:31:22 2020
 
-@author: ahmed91
 """
 
 import matplotlib.pyplot as plt
@@ -121,3 +127,122 @@ def detect_start(r, T,  a):
     # plt.subplot(212)
     # plt.plot(see)
     return tomax,tomaxd, ind  ; #tomax is the correlation function
+
+
+
+
+fd = np.linspace(-1,1,Nfd)* (fdmax/fs)
+
+
+for isat in range( 1 ,  32 ):
+    sat = np.array(   PRN(isat) )
+    repeatno= 20
+    # satr = signal.resample(sat , int((fs/fsca)* len(sat)) )
+    # csat = np.tile(satr,repeatno)
+
+    # satt = np.tile(sat,repeatno)
+    # csat = signal.resample(satt, int((fs/fsca)* len(satt)) )
+    # csat[csat>0]=1
+    # csat[csat<0]=-1
+
+    # satind  =  np.floor(np.arange(0,len(sat) , fsca/fs)).astype(int)
+
+    satind  =  np.floor( np.linspace(0, len(sat)-1, num=int((fs/fsca)* len(sat)) )     ).astype(int)
+    satrep  = sat[satind]
+    csat = np.tile(satrep,repeatno)
+
+    if  len(csat)  >  len(r) :
+        csat = csat[0:len(r)]
+
+    rc = r[0:len(csat)]
+    t = np.arange(0,len(rc) )
+
+    rr = rc[None,:]*np.exp(-1j*2*np.pi*t[None,:]*fd[:,None])
+    YE = np.fft.fft(rr,axis= 1)
+
+    CSAT = np.fft.fft(csat)
+
+    U = np.fft.ifft(YE* np.conj(CSAT[None,:]),axis= 1)
+
+    plt.figure('GPS number = ' + str(isat),figsize=(20,20))
+    plt.subplot(211)
+    plt.title('GPS number = ' + str(isat))
+    plt.imshow(np.abs(U)     ,cmap='jet') #  , vmin =  0 ,  vmax= 30
+    plt.axis('auto')
+    plt.colorbar()
+    plt.show()
+
+
+    plt.subplot(212)
+    plt.title('GPS number = ' + str(isat)  )
+    plt.plot(      abs(U)[np.where(np.abs(U)== np.max(np.abs(U)))[0][0]    ]    )
+    plt.show()
+    ind,  peaks = sig.find_peaks(  abs(U)[np.where(np.abs(U)== np.max(np.abs(U)))[0][0]    ]   , distance=  0.9*  len(satrep) ,  height= 0.1*np.max(np.abs(U)) )
+
+def correlate(rc,csat,fd):
+    """
+    rc : complex signal IQ samples
+    csat : code pseudo aléatoire échantillonné à fs
+    """
+    t = np.arange(0,len(rc) )
+    rr = rc[None,:]*np.exp(-1j*2*np.pi*t*fd[:,None])
+    RR = np.fft.fft(rr)
+    CSAT = np.fft.fft(csat)
+    U = np.fft.ifft(RR* np.conj(CSAT[None,:]))
+    return(U)
+
+def codesat(isat,repeatno=200,fs=2600000,fsca=1.023e6):
+    """ Construit un motif du code PRN du satellite à la bonne fréquence d'ech
+
+    Parameters
+    ----------
+    isat : satellite number
+    repeatno : int number of code repetition
+    fs   : sampling frequency
+    fsca : frequence code C/A
+    Returns
+    -------
+    csat : repetion of C/A code (sampled @ fs)
+
+    """
+    sat = np.array( PRN(isat) ) # code PRN du satellite
+    satind  =  np.floor( np.linspace(0, len(sat)-1, num=int((fs/fsca)* len(sat)) )     ).astype(int)
+    satrep  = sat[satind]
+    csat = np.tile(satrep,repeatno)
+    return(csat)
+
+# Fonction pour identifier les satellites présents dans le signal
+def identify_satellites(signal,fd,repeatno=20):
+    # Corrélation croisée entre le signal et les codes C/A des satellites connus
+    correlations = []
+    largmax = []
+    for sat_num in range(1,32):
+        csat = codesat(sat_num,repeatno=repeatno)
+        rc = signal[0:len(csat)]
+        U = correlate(rc,csat,fd)
+        corrmax = np.max(np.abs(U))
+        a = np.where(np.abs(U)==corrmax)
+        correlations.append(corrmax)
+        largmax.append(a)
+        #correlation = np.abs(fftconvolve(signal, code[::-1], mode='same'))
+    # Identifier les pics de corrélation pour déterminer les satellites présents
+    threshold = 0.5 * np.max(correlations)
+    detected_satellites = [i+1 for i, corr in enumerate(correlations) if corr > threshold]
+    largmax = [ largmax[i-1] for i in detected_satellites ]
+    largmax = [ (a[0][0],a[1][0]) for a in largmax ]
+    return detected_satellites,correlations,largmax
+
+def fine_Doppler(signal,detected_satellites,fd,larg,Nfd=100,kstart=0,repeatno=20):
+    correlations = []
+    lfineDoppler =[]
+    for k,sat_num in enumerate(detected_satellites):
+        csat = codesat(sat_num,repeatno=repeatno)
+        idxfdsat = larg[k][0]
+        fdsat  = np.linspace(fd[idxfdsat-1],fd[idxfdsat+1],Nfd)
+        rc = signal[kstart:len(csat)+kstart]
+        U = correlate(rc,csat,fdsat)
+        corrmax = np.max(np.abs(U))
+        a = np.where(np.abs(U)==corrmax)
+        correlations.append(corrmax)
+        lfineDoppler.append(fdsat[a[0][0]])
+    return lfineDoppler,correlations
