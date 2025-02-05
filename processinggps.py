@@ -162,8 +162,31 @@ def codesat(isat,repeatno=200,fs=2600000,fsca=1.023e6):
     csat = np.tile(satrep,repeatno)
     return(csat)
 
-# Fonction pour identifier les satellites présents dans le signal
+# 
 def identify_satellites(signal,fd,repeatno=20):
+    """
+    Fonction pour identifier les satellites présents dans le signal
+    
+
+    Parameters
+    ----------
+    signal : np.array 
+        complex signal 
+    fd : np.array
+        Doppler range 
+    repeatno : int, optional
+        number of repetition of the code. The default is 20.
+
+    Returns
+    -------
+    detected_satellites : TYPE
+        DESCRIPTION.
+    correlations : TYPE
+        DESCRIPTION.
+    largmax : TYPE
+        DESCRIPTION.
+
+    """
     # Corrélation croisée entre le signal et les codes C/A des satellites connus
     correlations = []
     largmax = []
