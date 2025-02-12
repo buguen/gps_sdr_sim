@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 #import mplleaflet
 import numpy as np
 import scipy.signal as sig
+import pdb
 
 from scipy import signal
 
@@ -129,11 +130,61 @@ def detect_start(r, T,  a):
     return tomax,tomaxd, ind  ; #tomax is the correlation function
 
 
-
-def correlate(rc,csat,fd):
+def correlate_fine(x,rc,csat):
     """
+    Monodimensional correlation (code and Doppler) 
+    Parameters
+    ----------
     rc : complex signal IQ samples
     csat : code pseudo aléatoire échantillonné à fs
+    
+    """
+    Nc = len(rc)
+    t = np.arange(0,Nc) # *ts
+    f = np.linspace(0,1,Nc) 
+    rr = rc*np.exp(-1j*2*np.pi*t*x[0])
+    #RR = np.fft.fft(rr)*np.exp(1j*2*np.pi*f*j_coarse/Nc)
+    #rrd = np.fft.ifft(RR)
+    csat_s = shift_signal_hermitian(csat,x[1])
+    #CSAT = np.fft.fft(csat)
+    #U = np.fft.ifft(RR* np.conj(CSAT))
+    #MaxU = np.max(np.abs(U))
+    output = -np.abs(np.sum(rr*csat_s))
+  
+    return(output)
+
+def correlate(rc,csat,fd,i_coarse,j_coarse):
+    """
+    Monodimensional correlation (code and Doppler) 
+    Parameters
+    ----------
+    rc : complex signal IQ samples
+    csat : code pseudo aléatoire échantillonné à fs
+    fd : Doppler range (Hertz)
+    i_coarse : Doppler index
+    j_coarse : Code index
+    """
+    Nc = len(rc)
+    t = np.arange(0,Nc) # *ts
+    f = np.linspace(0,1,Nc) 
+    rr = rc*np.exp(-1j*2*np.pi*t*fd[i_coarse])
+    #RR = np.fft.fft(rr)*np.exp(1j*2*np.pi*f*j_coarse/Nc)
+    #rrd = np.fft.ifft(RR)
+
+    #CSAT = np.fft.fft(csat)
+    #U = np.fft.ifft(RR* np.conj(CSAT))
+    #MaxU = np.max(np.abs(U))
+    return(rr,np.sum(rr*np.roll(csat,j_coarse)))
+
+
+def correlate2(rc,csat,fd):
+    """
+    Bidimensional correlation (code and Doppler) 
+    Parameters
+    ----------
+    rc : complex signal IQ samples
+    csat : code pseudo aléatoire échantillonné à fs
+    fd : Doppler range (Hertz)
     """
     t = np.arange(0,len(rc) )
     rr = rc[None,:]*np.exp(-1j*2*np.pi*t*fd[:,None])
@@ -141,6 +192,7 @@ def correlate(rc,csat,fd):
     CSAT = np.fft.fft(csat)
     U = np.fft.ifft(RR* np.conj(CSAT[None,:]))
     return(U)
+
 
 def codesat(isat,repeatno=200,fs=2600000,fsca=1.023e6):
     """ Construit un motif du code PRN du satellite à la bonne fréquence d'ech
@@ -163,10 +215,10 @@ def codesat(isat,repeatno=200,fs=2600000,fsca=1.023e6):
     return(csat)
 
 # 
-def identify_satellites(signal,fd,repeatno=20):
+def identify_satellites(signal,fd,repeatno=20,fs=2.6e6):
     """
     Fonction pour identifier les satellites présents dans le signal
-    
+
 
     Parameters
     ----------
@@ -193,20 +245,22 @@ def identify_satellites(signal,fd,repeatno=20):
     for sat_num in range(1,32):
         csat = codesat(sat_num,repeatno=repeatno)
         rc = signal[0:len(csat)]
-        U = correlate(rc,csat,fd)
+        U = correlate2(rc,csat,fd)
         corrmax = np.max(np.abs(U))
         a = np.where(np.abs(U)==corrmax)
         correlations.append(corrmax)
         largmax.append(a)
         #correlation = np.abs(fftconvolve(signal, code[::-1], mode='same'))
     # Identifier les pics de corrélation pour déterminer les satellites présents
-    threshold = 0.5 * np.max(correlations)
+    threshold = 2 * np.min(correlations)
     detected_satellites = [i+1 for i, corr in enumerate(correlations) if corr > threshold]
-    largmax = [ largmax[i-1] for i in detected_satellites ]
-    largmax = [ (a[0][0],a[1][0]) for a in largmax ]
+    largmax = [largmax[i-1] for i in detected_satellites]
+    largmax = [(a[0][0],a[1][0]) for a in largmax]
     return detected_satellites,correlations,largmax
 
 def fine_Doppler(signal,detected_satellites,fd,larg,Nfd=100,kstart=0,repeatno=20):
+    """ fine Doppler determination
+    """
     correlations = []
     lfineDoppler =[]
     for k,sat_num in enumerate(detected_satellites):
@@ -214,9 +268,72 @@ def fine_Doppler(signal,detected_satellites,fd,larg,Nfd=100,kstart=0,repeatno=20
         idxfdsat = larg[k][0]
         fdsat  = np.linspace(fd[idxfdsat-1],fd[idxfdsat+1],Nfd)
         rc = signal[kstart:len(csat)+kstart]
-        U = correlate(rc,csat,fdsat)
+        U = correlate2(rc,csat,fdsat)
         corrmax = np.max(np.abs(U))
         a = np.where(np.abs(U)==corrmax)
         correlations.append(corrmax)
         lfineDoppler.append(fdsat[a[0][0]])
     return lfineDoppler,correlations
+
+def shift_signal_hermitian(x, shift):
+    """
+    Décale un signal réel x par une valeur arbitraire en utilisant la transformée de Fourier
+    tout en respectant strictement la symétrie Hermitienne pour garantir un signal de sortie
+    strictement réel.
+    
+    Paramètres :
+        x : array_like
+            Signal d'entrée (réel).
+        shift : float
+            Décalage désiré en nombre d'échantillons (peut être fractionnaire).
+    
+    Retour :
+        x_shifted : np.ndarray
+            Signal décalé strictement réel.
+    """
+    N = len(x)
+    X = np.fft.rfft(x)  # Transformée de Fourier pour signal réel (donne seulement les fréquences positives)
+
+    # Indices de fréquence
+    k = np.arange(len(X))  # k = [0, 1, ..., N//2] (puisque rfft retourne N//2+1 coefficients réels)
+
+    # Appliquer le déphasage
+    shift_factor = np.exp(-2j * np.pi * shift * k / N)
+    X_shifted = X * shift_factor  # Applique le décalage dans le domaine fréquentiel
+
+    # Retour au domaine temporel
+    x_shifted = np.fft.irfft(X_shifted, n=N)  # Transformée inverse réelle
+
+    return x_shifted
+
+def shift_signal(x, shift):
+    """
+    Décale un signal réel x par une valeur arbitraire en utilisant la transformée de Fourier.
+    
+    - Si `shift` est entier, la fonction est équivalente à np.roll.
+    - Si `shift` est fractionnaire, un rééchantillonnage correct est effectué.
+    
+    Paramètres :
+        x : array_like
+            Signal d'entrée (réel).
+        shift : float
+            Décalage désiré en nombre d'échantillons (peut être fractionnaire).
+    
+    Retour :
+        x_shifted : np.ndarray
+            Signal décalé.
+    """
+    N = len(x)
+    X = np.fft.fft(x)  # Transformée de Fourier
+    
+    # Fréquences discrètes k = [0, 1, ..., N//2, -N//2, ..., -1]
+    k = np.fft.fftfreq(N) * N
+
+    # Appliquer la phase shift dans le domaine de Fourier
+    shift_factor = np.exp(-2j * np.pi * shift * k / N)
+    X_shifted = X * shift_factor
+
+    # Retour au domaine temporel
+    x_shifted = np.fft.ifft(X_shifted).real  # Prendre uniquement la partie réelle
+
+    return x_shifted
